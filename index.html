@@ -16,9 +16,9 @@
   }
 
   .wheel-container {
-    margin: 40px auto;
-    width: 300px;
-    height: 300px;
+    margin: 40px auto 10px;
+    width: 320px;
+    height: 320px;
     position: relative;
   }
 
@@ -31,26 +31,19 @@
   .pointer {
     width: 0;
     height: 0;
-    border-left: 20px solid transparent;
-    border-right: 20px solid transparent;
-    border-top: 30px solid red;   /* ▼ */
+    border-left: 22px solid transparent;
+    border-right: 22px solid transparent;
+    border-top: 32px solid red;   /* ▼ */
     position: absolute;
-    top: -2px;                    /* 必要なら微調整 */
-    left: calc(50% - 20px);
+    top: -4px;                    /* 位置は好みで微調整 */
+    left: calc(50% - 22px);
     z-index: 100;
   }
 
-  .result {
-    font-size: 1.8rem;
-    margin: 20px 0;
-    font-weight: bold;
-    min-height: 40px;
-  }
-
   button {
-    padding: 12px 20px;
+    padding: 12px 24px;
     margin: 10px;
-    font-size: 1.2rem;
+    font-size: 1.3rem;
     border: none;
     border-radius: 8px;
     cursor: pointer;
@@ -76,10 +69,9 @@
 <h2>相手を決める</h2>
 <div class="wheel-container">
   <div class="pointer"></div>
-  <canvas id="personWheel" width="300" height="300"></canvas>
+  <canvas id="personWheel" width="320" height="320"></canvas>
 </div>
-<div id="personResult" class="result"></div>
-<button id="personButton" onclick="handleClick('person')">相手ルーレットを回す</button>
+<button id="personButton" onclick="spin('person')">相手ルーレットを回す</button>
 
 <hr style="margin:40px 0;">
 
@@ -87,10 +79,9 @@
 <h2>お題を決める</h2>
 <div class="wheel-container">
   <div class="pointer"></div>
-  <canvas id="topicWheel" width="300" height="300"></canvas>
+  <canvas id="topicWheel" width="320" height="320"></canvas>
 </div>
-<div id="topicResult" class="result"></div>
-<button id="topicButton" onclick="handleClick('topic')">お題ルーレットを回す</button>
+<button id="topicButton" onclick="spin('topic')">お題ルーレットを回す</button>
 
 <script>
 // データ
@@ -112,29 +103,32 @@ const colors = [
   "#ff99cc", "#99cc33", "#3399cc"
 ];
 
-// ルーレット描画（お題用はフォント小さめ）
+// ルーレット描画（お題用は少し小さいフォント）
 function drawWheel(canvasId, items, isTopic = false) {
   const canvas = document.getElementById(canvasId);
   const ctx = canvas.getContext("2d");
   const total = items.length;
   const arc = (2 * Math.PI) / total;
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+  const radius = canvas.width / 2;
 
   for (let i = 0; i < total; i++) {
     ctx.beginPath();
     ctx.fillStyle = colors[i % colors.length];
-    ctx.moveTo(150, 150);
-    ctx.arc(150, 150, 150, arc * i, arc * (i + 1));
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, radius, arc * i, arc * (i + 1));
     ctx.fill();
 
-    // テキスト
+    // テキスト（大きめ）
     ctx.save();
-    ctx.translate(150, 150);
+    ctx.translate(cx, cy);
     ctx.rotate(arc * i + arc / 2);
     ctx.textAlign = "right";
     ctx.fillStyle = "#000";
-    ctx.font = isTopic ? "11px sans-serif" : "14px sans-serif";
-    const maxWidth = isTopic ? 115 : 140;
-    ctx.fillText(items[i], 140, 5, maxWidth);
+    ctx.font = isTopic ? "13px sans-serif" : "18px sans-serif"; // ここで大きさ変更
+    const maxWidth = isTopic ? radius - 40 : radius - 30;
+    ctx.fillText(items[i], radius - 10, 5, maxWidth);
     ctx.restore();
   }
 }
@@ -142,22 +136,10 @@ function drawWheel(canvasId, items, isTopic = false) {
 drawWheel("personWheel", persons, false);
 drawWheel("topicWheel", topics, true);
 
-// 状態管理
+// 状態
 const state = {
-  person: {
-    spinning: false,   // 回転中か
-    decel: false,      // 減速中か
-    angle: 0,          // 現在の回転角度（deg）
-    frameId: null,
-    lastIndex: null    // いまは未使用（将来、重複回避に使える）
-  },
-  topic: {
-    spinning: false,
-    decel: false,
-    angle: 0,
-    frameId: null,
-    lastIndex: null
-  }
+  person: { spinning: false, angle: 0 },
+  topic:  { spinning: false, angle: 0 }
 };
 
 // 減速カーブ
@@ -165,59 +147,25 @@ function easeOutCubic(t) {
   return 1 - Math.pow(1 - t, 3);
 }
 
-// ボタンクリック
-function handleClick(type) {
+// 回転処理（クリック1回で回って止まる）
+function spin(type) {
   const s = state[type];
-  const button = document.getElementById(type + "Button");
-
-  // まだ回っていない → 回転開始
-  if (!s.spinning) {
-    s.spinning = true;
-    s.decel = false;
-    button.textContent = "クリックで止める";
-    spinLoop(type);
-    return;
-  }
-
-  // 回転中（減速前） → 減速して止める
-  if (s.spinning && !s.decel) {
-    startDecel(type);
-  }
-}
-
-// 一定速度で回転し続けるループ
-function spinLoop(type) {
-  const s = state[type];
-  if (!s.spinning || s.decel) return;
+  if (s.spinning) return;
 
   const canvas = document.getElementById(type + "Wheel");
-  const speed = 15; // deg/frame
-
-  s.angle += speed;
-  canvas.style.transform = `rotate(${s.angle}deg)`;
-
-  s.frameId = requestAnimationFrame(() => spinLoop(type));
-}
-
-// 減速してランダムな角度で止める
-function startDecel(type) {
-  const items = (type === "person") ? persons : topics;
-  const canvas = document.getElementById(type + "Wheel");
-  const resultBox = document.getElementById(type + "Result");
   const button = document.getElementById(type + "Button");
-  const s = state[type];
 
-  s.decel = true;
+  s.spinning = true;
   button.disabled = true;
 
   const startAngle = s.angle;
-  const extraRotation = 720 + Math.random() * 720; // 2〜4回転くらい
+  const extraRotation = 720 + Math.random() * 720; // 2〜4回転
   const finalAngle = startAngle + extraRotation;
 
-  const duration = 2000; // 減速時間 2秒
+  const duration = 2000; // 2秒で減速
   const startTime = performance.now();
 
-  function decelLoop(now) {
+  function animate(now) {
     const elapsed = now - startTime;
     const t = Math.min(elapsed / duration, 1);
     const eased = easeOutCubic(t);
@@ -226,33 +174,14 @@ function startDecel(type) {
     canvas.style.transform = `rotate(${s.angle}deg)`;
 
     if (t < 1) {
-      requestAnimationFrame(decelLoop);
+      requestAnimationFrame(animate);
     } else {
-      // 停止・結果確定（ここでポインタの下にあるインデックスを計算）
       s.spinning = false;
-      s.decel = false;
-
-      const n = items.length;
-      const arcDeg = 360 / n;
-
-      // 現在の角度を 0〜360 に正規化
-      const angleNorm = ((s.angle % 360) + 360) % 360;
-
-      // 90度（12時方向）に来ているセグメントを求める
-      // i*arcDeg <= 90 + angleNorm < (i+1)*arcDeg
-      const raw = (90 + angleNorm) % 360;
-      const index = Math.floor(raw / arcDeg);
-
-      resultBox.textContent = items[index];
-      s.lastIndex = index;
-
       button.disabled = false;
-      button.textContent =
-        (type === "person") ? "相手ルーレットを回す" : "お題ルーレットを回す";
     }
   }
 
-  requestAnimationFrame(decelLoop);
+  requestAnimationFrame(animate);
 }
 </script>
 
