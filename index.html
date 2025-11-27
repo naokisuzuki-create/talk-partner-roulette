@@ -35,7 +35,7 @@
     border-right: 22px solid transparent;
     border-top: 32px solid red;   /* ▼ */
     position: absolute;
-    top: -4px;                    /* 位置は好みで微調整 */
+    top: -4px;
     left: calc(50% - 22px);
     z-index: 100;
   }
@@ -103,7 +103,7 @@ const colors = [
   "#ff99cc", "#99cc33", "#3399cc"
 ];
 
-// ルーレット描画（お題用はやや小さめフォント）
+// ルーレット描画（お題用は少し小さいフォント）
 function drawWheel(canvasId, items, isTopic = false) {
   const canvas = document.getElementById(canvasId);
   const ctx = canvas.getContext("2d");
@@ -136,65 +136,74 @@ function drawWheel(canvasId, items, isTopic = false) {
 drawWheel("personWheel", persons, false);
 drawWheel("topicWheel", topics, true);
 
-// 状態：回転中かどうか／減速中かどうか／現在角度
+// 状態管理：phase は "idle" / "spinning" / "decelerating"
 const state = {
-  person: { spinning: false, decel: false, angle: 0 },
-  topic:  { spinning: false, decel: false, angle: 0 }
+  person: { phase: "idle", angle: 0, spinTimer: null },
+  topic:  { phase: "idle", angle: 0, spinTimer: null }
 };
 
-// 減速カーブ
+// ease-out（減速カーブ）
 function easeOutCubic(t) {
   return 1 - Math.pow(1 - t, 3);
 }
 
-// ボタンクリック：1回目で回転開始、2回目で減速停止
+// ボタンハンドラ
 function handleClick(type) {
   const s = state[type];
   const button = document.getElementById(type + "Button");
 
-  // まだ回っていない → 回転開始
-  if (!s.spinning) {
-    s.spinning = true;
-    s.decel = false;
+  if (s.phase === "idle") {
+    // 1回目クリック：回転開始
+    startSpin(type);
     button.textContent = "クリックで止める";
-    spinLoop(type);
     return;
   }
 
-  // 回転中（まだ減速していない）→ 減速して止める
-  if (s.spinning && !s.decel) {
+  if (s.phase === "spinning") {
+    // 2回目クリック：減速して止める
     startDecel(type);
+    return;
   }
+
+  // decelerating 中は無視
 }
 
-// 一定速度で回転し続けるループ
-function spinLoop(type) {
+// 一定速度で回転
+function startSpin(type) {
   const s = state[type];
-  if (!s.spinning || s.decel) return;
-
   const canvas = document.getElementById(type + "Wheel");
-  const speed = 15; // deg/frame
 
-  s.angle += speed;
-  canvas.style.transform = `rotate(${s.angle}deg)`;
+  if (s.spinTimer) clearInterval(s.spinTimer);
 
-  requestAnimationFrame(() => spinLoop(type));
+  s.phase = "spinning";
+  const speed = 10;     // 1ステップの角度
+  const interval = 20;  // ms
+
+  s.spinTimer = setInterval(() => {
+    s.angle += speed;
+    canvas.style.transform = `rotate(${s.angle}deg)`;
+  }, interval);
 }
 
-// 減速して止める
+// 減速して停止
 function startDecel(type) {
   const s = state[type];
   const canvas = document.getElementById(type + "Wheel");
   const button = document.getElementById(type + "Button");
 
-  s.decel = true;
+  if (s.spinTimer) {
+    clearInterval(s.spinTimer);
+    s.spinTimer = null;
+  }
+
+  s.phase = "decelerating";
   button.disabled = true;
 
   const startAngle = s.angle;
-  const extraRotation = 720 + Math.random() * 720; // 2〜4回転分
+  const extraRotation = 720 + Math.random() * 720; // 2〜4回転
   const finalAngle = startAngle + extraRotation;
 
-  const duration = 2000; // 2秒で減速
+  const duration = 2000; // ms
   const startTime = performance.now();
 
   function animate(now) {
@@ -208,9 +217,7 @@ function startDecel(type) {
     if (t < 1) {
       requestAnimationFrame(animate);
     } else {
-      // 停止
-      s.spinning = false;
-      s.decel = false;
+      s.phase = "idle";
       button.disabled = false;
       button.textContent =
         (type === "person") ? "相手ルーレットを回す" : "お題ルーレットを回す";
