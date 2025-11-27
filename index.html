@@ -33,9 +33,9 @@
     height: 0;
     border-left: 20px solid transparent;
     border-right: 20px solid transparent;
-    border-top: 30px solid red; /* ▼ */
+    border-top: 30px solid red;   /* 下向き三角形 */
     position: absolute;
-    top: -2px;                  /* 位置は必要なら微調整 */
+    top: -2px;                    /* 必要なら微調整 */
     left: calc(50% - 20px);
     z-index: 100;
   }
@@ -134,10 +134,8 @@ function drawWheel(canvasId, items, isTopic = false) {
     ctx.fillStyle = "#000";
     ctx.font = isTopic ? "11px sans-serif" : "14px sans-serif";
 
-    // 長いお題も収まるよう maxWidth 指定
     const maxWidth = isTopic ? 115 : 140;
     ctx.fillText(items[i], 140, 5, maxWidth);
-
     ctx.restore();
   }
 }
@@ -150,8 +148,8 @@ const state = {
   person: {
     spinning: false,   // 回転中か
     decel: false,      // 減速中か
-    angle: 0,          // 現在角度（deg）
-    lastIndex: null,   // 前回の当たり
+    angle: 0,          // 現在の回転角度（deg）
+    lastIndex: null,   // 前回当たったインデックス
     frameId: null
   },
   topic: {
@@ -163,12 +161,12 @@ const state = {
   }
 };
 
-// ease-out（減速カーブ）
+// 減速カーブ
 function easeOutCubic(t) {
   return 1 - Math.pow(1 - t, 3);
 }
 
-// ボタンクリック処理
+// ボタンクリック
 function handleClick(type) {
   const s = state[type];
   const button = document.getElementById(type + "Button");
@@ -182,7 +180,7 @@ function handleClick(type) {
     return;
   }
 
-  // 回転中で、まだ減速していない → 減速＆停止へ
+  // 回転中（減速前） → 減速して止める
   if (s.spinning && !s.decel) {
     startDecel(type);
   }
@@ -202,7 +200,7 @@ function spinLoop(type) {
   s.frameId = requestAnimationFrame(() => spinLoop(type));
 }
 
-// 減速してランダムな位置で止める（直前の人／お題は除外）
+// 減速してランダム位置で止める（直前の人／お題を除外）
 function startDecel(type) {
   const items = (type === "person") ? persons : topics;
   const canvas = document.getElementById(type + "Wheel");
@@ -224,14 +222,17 @@ function startDecel(type) {
   const targetIndex =
     candidates[Math.floor(Math.random() * candidates.length)];
 
-  // ポインタ（12時方向 = 90deg）に targetIndex の中央が来る最終角度。
-  // セグメント中央角度は (i + 0.5) * arcDeg。
-  // その角度 + rotation = 90deg になるようにする ⇒ rotation = 90 - (i + 0.5) * arcDeg
-  let baseAngle = 90 - (targetIndex + 0.5) * arcDeg;
-  baseAngle = ((baseAngle % 360) + 360) % 360; // 0〜360 に正規化
+  // 各セグメント中央の角度（3時方向から反時計回り）
+  const centerDeg = (targetIndex + 0.5) * arcDeg;
+
+  // CSSの回転は「時計回りが正」。  
+  // セグメント中央角度(centerDeg) - 回転角度(rotation) = 90deg（12時方向）になるようにしたい。
+  // よって rotation = centerDeg - 90。
+  let baseRotation = centerDeg - 90;
+  baseRotation = ((baseRotation % 360) + 360) % 360;
 
   const startAngle = s.angle;
-  let finalAngle = baseAngle;
+  let finalAngle = baseRotation;
 
   // 今の角度より十分先（3回転以上先）になるように調整
   while (finalAngle < startAngle + 1080) { // 360 * 3
@@ -252,7 +253,7 @@ function startDecel(type) {
     if (t < 1) {
       requestAnimationFrame(decelLoop);
     } else {
-      // 停止・結果表示
+      // 停止・結果確定
       s.spinning = false;
       s.decel = false;
       s.lastIndex = targetIndex;
