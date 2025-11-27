@@ -33,7 +33,7 @@
     height: 0;
     border-left: 20px solid transparent;
     border-right: 20px solid transparent;
-    border-top: 30px solid red;   /* 下向き三角形 */
+    border-top: 30px solid red;   /* ▼ */
     position: absolute;
     top: -2px;                    /* 必要なら微調整 */
     left: calc(50% - 20px);
@@ -133,7 +133,6 @@ function drawWheel(canvasId, items, isTopic = false) {
     ctx.textAlign = "right";
     ctx.fillStyle = "#000";
     ctx.font = isTopic ? "11px sans-serif" : "14px sans-serif";
-
     const maxWidth = isTopic ? 115 : 140;
     ctx.fillText(items[i], 140, 5, maxWidth);
     ctx.restore();
@@ -149,15 +148,15 @@ const state = {
     spinning: false,   // 回転中か
     decel: false,      // 減速中か
     angle: 0,          // 現在の回転角度（deg）
-    lastIndex: null,   // 前回当たったインデックス
-    frameId: null
+    frameId: null,
+    lastIndex: null    // いまは未使用（将来、重複回避に使える）
   },
   topic: {
     spinning: false,
     decel: false,
     angle: 0,
-    lastIndex: null,
-    frameId: null
+    frameId: null,
+    lastIndex: null
   }
 };
 
@@ -200,7 +199,7 @@ function spinLoop(type) {
   s.frameId = requestAnimationFrame(() => spinLoop(type));
 }
 
-// 減速してランダム位置で止める（直前の人／お題を除外）
+// 減速してランダムな角度で止める
 function startDecel(type) {
   const items = (type === "person") ? persons : topics;
   const canvas = document.getElementById(type + "Wheel");
@@ -211,33 +210,9 @@ function startDecel(type) {
   s.decel = true;
   button.disabled = true;
 
-  const n = items.length;
-  const arcDeg = 360 / n;
-
-  // 直前と同じインデックスを除外
-  const candidates = [];
-  for (let i = 0; i < n; i++) {
-    if (i !== s.lastIndex) candidates.push(i);
-  }
-  const targetIndex =
-    candidates[Math.floor(Math.random() * candidates.length)];
-
-  // 各セグメント中央の角度（3時方向から反時計回り）
-  const centerDeg = (targetIndex + 0.5) * arcDeg;
-
-  // CSSの回転は「時計回りが正」。  
-  // セグメント中央角度(centerDeg) - 回転角度(rotation) = 90deg（12時方向）になるようにしたい。
-  // よって rotation = centerDeg - 90。
-  let baseRotation = centerDeg - 90;
-  baseRotation = ((baseRotation % 360) + 360) % 360;
-
   const startAngle = s.angle;
-  let finalAngle = baseRotation;
-
-  // 今の角度より十分先（3回転以上先）になるように調整
-  while (finalAngle < startAngle + 1080) { // 360 * 3
-    finalAngle += 360;
-  }
+  const extraRotation = 720 + Math.random() * 720; // 2〜4回転くらい
+  const finalAngle = startAngle + extraRotation;
 
   const duration = 2000; // 減速時間 2秒
   const startTime = performance.now();
@@ -253,12 +228,23 @@ function startDecel(type) {
     if (t < 1) {
       requestAnimationFrame(decelLoop);
     } else {
-      // 停止・結果確定
+      // 停止・結果確定（ここでポインタの下にあるインデックスを計算）
       s.spinning = false;
       s.decel = false;
-      s.lastIndex = targetIndex;
 
-      resultBox.textContent = items[targetIndex];
+      const n = items.length;
+      const arcDeg = 360 / n;
+
+      // 現在の角度を 0〜360 に正規化
+      const angleNorm = ((s.angle % 360) + 360) % 360;
+
+      // 90度（12時方向）に来ているセグメントを求める
+      // i*arcDeg <= 90 + angleNorm < (i+1)*arcDeg
+      const raw = (90 + angleNorm) % 360;
+      const index = Math.floor(raw / arcDeg);
+
+      resultBox.textContent = items[index];
+      s.lastIndex = index;
 
       button.disabled = false;
       button.textContent =
