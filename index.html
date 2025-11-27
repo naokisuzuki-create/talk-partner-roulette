@@ -78,7 +78,7 @@
   <canvas id="personWheel" width="300" height="300"></canvas>
 </div>
 <div id="personResult" class="result"></div>
-<button id="personButton" onclick="spin('person')">相手ルーレットを回す</button>
+<button id="personButton" onclick="handleClick('person')">相手ルーレットを回す</button>
 
 <hr style="margin:40px 0;">
 
@@ -89,7 +89,7 @@
   <canvas id="topicWheel" width="300" height="300"></canvas>
 </div>
 <div id="topicResult" class="result"></div>
-<button id="topicButton" onclick="spin('topic')">お題ルーレットを回す</button>
+<button id="topicButton" onclick="handleClick('topic')">お題ルーレットを回す</button>
 
 <script>
 // データ
@@ -140,73 +140,117 @@ function drawWheel(canvasId, items) {
 drawWheel("personWheel", persons);
 drawWheel("topicWheel", topics);
 
-// 各ルーレットの状態
+// 状態管理
 const state = {
   person: {
-    spinning: false,
-    lastIndex: null
+    spinning: false,    // 回転中か
+    decel: false,       // 減速中か
+    angle: 0,           // 現在角度（deg）
+    lastIndex: null,    // 前回の当たり
+    frameId: null
   },
   topic: {
     spinning: false,
-    lastIndex: null
+    decel: false,
+    angle: 0,
+    lastIndex: null,
+    frameId: null
   }
 };
 
-// ease-out（減速）関数
+// ease-out（減速カーブ）
 function easeOutCubic(t) {
   return 1 - Math.pow(1 - t, 3);
 }
 
-function spin(type) {
+// ボタンクリック処理
+function handleClick(type) {
+  const s = state[type];
+  const button = document.getElementById(type + "Button");
+
+  // まだ回っていない → 回転開始
+  if (!s.spinning) {
+    s.spinning = true;
+    s.decel = false;
+    button.textContent = "クリックで止める";
+    spinLoop(type);
+    return;
+  }
+
+  // 回転中かつまだ減速していない → 減速＆停止へ
+  if (s.spinning && !s.decel) {
+    startDecel(type);
+  }
+}
+
+// 一定速度で回転し続けるループ
+function spinLoop(type) {
+  const s = state[type];
+  if (!s.spinning || s.decel) return;
+
+  const canvas = document.getElementById(type + "Wheel");
+  const speed = 15; // deg/frame
+
+  s.angle += speed;
+  canvas.style.transform = `rotate(${s.angle}deg)`;
+
+  s.frameId = requestAnimationFrame(() => spinLoop(type));
+}
+
+// 減速してランダムな位置で止める
+function startDecel(type) {
   const items = (type === "person") ? persons : topics;
   const canvas = document.getElementById(type + "Wheel");
   const resultBox = document.getElementById(type + "Result");
   const button = document.getElementById(type + "Button");
   const s = state[type];
 
-  if (s.spinning) return; // 二重起動防止
-
-  s.spinning = true;
+  s.decel = true;
   button.disabled = true;
-  button.textContent = "回転中…";
-  resultBox.textContent = "";
 
-  // 直前と同じインデックスを除外した候補を作る
-  const availableIndices = [];
-  for (let i = 0; i < items.length; i++) {
-    if (i !== s.lastIndex) {
-      availableIndices.push(i);
-    }
+  const n = items.length;
+  const arcDeg = 360 / n;
+
+  // 直前と同じインデックスを除外
+  const candidates = [];
+  for (let i = 0; i < n; i++) {
+    if (i !== s.lastIndex) candidates.push(i);
+  }
+  const targetIndex =
+    candidates[Math.floor(Math.random() * candidates.length)];
+
+  // ポインタ（12時方向）に targetIndex が来る最終角度を計算
+  // (i + 0.5) * arcDeg がポインタ(90deg)になるように
+  let baseAngle = (targetIndex + 0.5) * arcDeg - 90; // 0〜360のどこか
+  baseAngle = ((baseAngle % 360) + 360) % 360;
+
+  const startAngle = s.angle;
+  let finalAngle = baseAngle;
+
+  // 今の角度より十分先（3回転以上先）になるように調整
+  while (finalAngle < startAngle + 1080) { // 360 * 3
+    finalAngle += 360;
   }
 
-  // 候補からランダムに1つ選ぶ
-  const targetIndex =
-    availableIndices[Math.floor(Math.random() * availableIndices.length)];
+  const duration = 2000; // 減速時間 2秒
+  const startTime = performance.now();
 
-  const arc = 360 / items.length;
-  // この finalAngle になると targetIndex がポインタ上に来るように調整
-  const finalAngle = 360 - (targetIndex * arc);
-
-  const spins = 5; // 何回転するか
-  const totalRotation = 360 * spins + finalAngle;
-
-  const duration = 3000; // 3秒で減速して止まる
-  const start = performance.now();
-
-  function animate(now) {
-    const elapsed = now - start;
-    const t = Math.min(elapsed / duration, 1); // 0〜1
+  function decelLoop(now) {
+    const elapsed = now - startTime;
+    const t = Math.min(elapsed / duration, 1);
     const eased = easeOutCubic(t);
-    const angle = totalRotation * eased;
 
-    canvas.style.transform = `rotate(${angle}deg)`;
+    s.angle = startAngle + (finalAngle - startAngle) * eased;
+    canvas.style.transform = `rotate(${s.angle}deg)`;
 
     if (t < 1) {
-      requestAnimationFrame(animate);
+      requestAnimationFrame(decelLoop);
     } else {
-      // 結果確定
+      // 停止・結果表示
       s.spinning = false;
+      s.decel = false;
       s.lastIndex = targetIndex;
+
       resultBox.textContent = items[targetIndex];
 
       button.disabled = false;
@@ -215,7 +259,7 @@ function spin(type) {
     }
   }
 
-  requestAnimationFrame(animate);
+  requestAnimationFrame(decelLoop);
 }
 
 </script>
