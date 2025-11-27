@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>トーク相手ルーレット</title>
+<style>
+  body {
+    font-family: sans-serif;
+    text-align: center;
+    padding: 20px;
+    background: #f8f8f8;
+  }
+
+  h1 {
+    margin-bottom: 30px;
+  }
+
+  .wheel-container {
+    margin: 40px auto;
+    width: 300px;
+    height: 300px;
+    position: relative;
+  }
+
+  canvas {
+    width: 100%;
+    height: 100%;
+  }
+
+  .pointer {
+    width: 0;
+    height: 0;
+    border-left: 20px solid transparent;
+    border-right: 20px solid transparent;
+    border-bottom: 30px solid red;
+    position: absolute;
+    top: -10px;
+    left: calc(50% - 20px);
+    z-index: 100;
+  }
+
+  .result {
+    font-size: 1.8rem;
+    margin: 20px 0;
+    font-weight: bold;
+    min-height: 40px;
+  }
+
+  button {
+    padding: 12px 20px;
+    margin: 10px;
+    font-size: 1.2rem;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    background: #0070f0;
+    color: white;
+  }
+
+  button:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+
+  button:hover:not(:disabled) {
+    opacity: 0.85;
+  }
+</style>
+</head>
+<body>
+
+<h1>LINE WORKS トーク相手ルーレット</h1>
+
+<!-- 相手ルーレット -->
+<h2>相手を決める</h2>
+<div class="wheel-container">
+  <div class="pointer"></div>
+  <canvas id="personWheel" width="300" height="300"></canvas>
+</div>
+<div id="personResult" class="result"></div>
+<button id="personButton" onclick="spin('person')">相手ルーレットを回す</button>
+
+<hr style="margin:40px 0;">
+
+<!-- お題ルーレット -->
+<h2>お題を決める</h2>
+<div class="wheel-container">
+  <div class="pointer"></div>
+  <canvas id="topicWheel" width="300" height="300"></canvas>
+</div>
+<div id="topicResult" class="result"></div>
+<button id="topicButton" onclick="spin('topic')">お題ルーレットを回す</button>
+
+<script>
+// データ
+const persons = [
+  "溝 誠也","麓 由紀子","中山 香","鈴木 由祈子",
+  "杉本 信子","吉川 陽子","山口 志保","石橋 雄一","花田 奈美"
+];
+
+const topics = [
+  "好きな食べ物は？","座右の銘は？","いつも何時頃起きる？",
+  "体で痛むところある？","笑える一言","好きな漫画は？",
+  "がんばったらどれくらい食べれる？"
+];
+
+// カラーパレット
+const colors = [
+  "#ffcc00", "#ff9900", "#ff6666",
+  "#66ccff", "#66ff99", "#cc99ff",
+  "#ff99cc", "#99cc33", "#3399cc"
+];
+
+// ルーレット描画
+function drawWheel(canvasId, items) {
+  const canvas = document.getElementById(canvasId);
+  const ctx = canvas.getContext("2d");
+  const total = items.length;
+  const arc = (2 * Math.PI) / total;
+
+  for (let i = 0; i < total; i++) {
+    ctx.beginPath();
+    ctx.fillStyle = colors[i % colors.length];
+    ctx.moveTo(150, 150);
+    ctx.arc(150, 150, 150, arc * i, arc * (i + 1));
+    ctx.fill();
+
+    // テキスト
+    ctx.save();
+    ctx.translate(150, 150);
+    ctx.rotate(arc * i + arc / 2);
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#000";
+    ctx.font = "14px sans-serif";
+    ctx.fillText(items[i], 140, 5);
+    ctx.restore();
+  }
+}
+
+drawWheel("personWheel", persons);
+drawWheel("topicWheel", topics);
+
+// 各ルーレットの状態
+const state = {
+  person: {
+    spinning: false,
+    lastIndex: null
+  },
+  topic: {
+    spinning: false,
+    lastIndex: null
+  }
+};
+
+// ease-out（減速）関数
+function easeOutCubic(t) {
+  return 1 - Math.pow(1 - t, 3);
+}
+
+function spin(type) {
+  const items = (type === "person") ? persons : topics;
+  const canvas = document.getElementById(type + "Wheel");
+  const resultBox = document.getElementById(type + "Result");
+  const button = document.getElementById(type + "Button");
+  const s = state[type];
+
+  if (s.spinning) return; // 二重起動防止
+
+  s.spinning = true;
+  button.disabled = true;
+  button.textContent = "回転中…";
+  resultBox.textContent = "";
+
+  // 直前と同じインデックスを除外した候補を作る
+  const availableIndices = [];
+  for (let i = 0; i < items.length; i++) {
+    if (i !== s.lastIndex) {
+      availableIndices.push(i);
+    }
+  }
+
+  // 候補からランダムに1つ選ぶ
+  const targetIndex =
+    availableIndices[Math.floor(Math.random() * availableIndices.length)];
+
+  const arc = 360 / items.length;
+  // この finalAngle になると targetIndex がポインタ上に来るように調整
+  const finalAngle = 360 - (targetIndex * arc);
+
+  const spins = 5; // 何回転するか
+  const totalRotation = 360 * spins + finalAngle;
+
+  const duration = 3000; // 3秒で減速して止まる
+  const start = performance.now();
+
+  function animate(now) {
+    const elapsed = now - start;
+    const t = Math.min(elapsed / duration, 1); // 0〜1
+    const eased = easeOutCubic(t);
+    const angle = totalRotation * eased;
+
+    canvas.style.transform = `rotate(${angle}deg)`;
+
+    if (t < 1) {
+      requestAnimationFrame(animate);
+    } else {
+      // 結果確定
+      s.spinning = false;
+      s.lastIndex = targetIndex;
+      resultBox.textContent = items[targetIndex];
+
+      button.disabled = false;
+      button.textContent =
+        (type === "person") ? "相手ルーレットを回す" : "お題ルーレットを回す";
+    }
+  }
+
+  requestAnimationFrame(animate);
+}
+
+</script>
+
+</body>
+</html>
